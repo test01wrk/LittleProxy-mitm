@@ -2,6 +2,7 @@ package org.littleshoot.proxy.mitm;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.lang.reflect.Field;
 import java.math.BigInteger;
 import java.security.InvalidKeyException;
 import java.security.Key;
@@ -62,8 +63,19 @@ public final class CertificateHelper {
 
     public static final String PROVIDER_NAME = BouncyCastleProvider.PROVIDER_NAME;
 
+    public static final int ANDROID_VERSION;
+
     static {
         Security.addProvider(new BouncyCastleProvider());
+        int androidVersion = 0;
+        try {
+            Class<?> clazz = Class.forName("android.os.Build$VERSION");
+            Field versionField = clazz.getDeclaredField("SDK_INT");
+            androidVersion = versionField.getInt(null);
+        } catch (Throwable throwable) {
+            // ignore
+        }
+        ANDROID_VERSION = androidVersion;
     }
 
     private static final String KEYGEN_ALGORITHM = "RSA";
@@ -255,10 +267,14 @@ public final class CertificateHelper {
             X509v3CertificateBuilder certificateBuilder,
             PrivateKey signedWithPrivateKey) throws OperatorCreationException,
             CertificateException {
-        ContentSigner signer = new JcaContentSignerBuilder(SIGNATURE_ALGORITHM)
-                .setProvider(PROVIDER_NAME).build(signedWithPrivateKey);
-        return new JcaX509CertificateConverter().setProvider(
-                PROVIDER_NAME).getCertificate(certificateBuilder.build(signer));
+        JcaContentSignerBuilder builder = new JcaContentSignerBuilder(SIGNATURE_ALGORITHM);
+        JcaX509CertificateConverter converter = new JcaX509CertificateConverter();
+        if (ANDROID_VERSION < 28) {
+            builder.setProvider(PROVIDER_NAME);
+            converter.setProvider(PROVIDER_NAME);
+        }
+        ContentSigner signer = builder.build(signedWithPrivateKey);
+        return converter.getCertificate(certificateBuilder.build(signer));
     }
 
     public static TrustManager[] getTrustManagers(KeyStore keyStore)
